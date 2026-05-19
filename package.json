@@ -1,0 +1,14 @@
+{
+  "name": "abacore-landing",
+  "version": "1.0.0",
+  "description": "Landing page ABACORE S.A.S.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "resend": "^4.0.0"
+  }
+}

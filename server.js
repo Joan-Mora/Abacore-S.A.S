@@ -19,6 +19,15 @@ const MIME_TYPES = {
     '.ico': 'image/x-icon',
 };
 
+const PUBLIC_DIRS = new Set(['assets', 'css', 'js']);
+
+const escapeHtml = (value) => String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
 const server = http.createServer(async (req, res) => {
     // CORS para desarrollo
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -38,12 +47,22 @@ const server = http.createServer(async (req, res) => {
 
         req.on('end', async () => {
             try {
-                const { name, email, subject, message } = JSON.parse(body);
+                const fields = JSON.parse(body);
 
-                if (!name || !email || !subject || !message) {
+                if (!fields.name || !fields.email || !fields.subject || !fields.message) {
                     res.writeHead(400, { 'Content-Type': 'application/json' });
                     return res.end(JSON.stringify({ error: 'Campos incompletos.' }));
                 }
+
+                const email = String(fields.email).trim();
+                if (!/^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/.test(email)) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    return res.end(JSON.stringify({ error: 'Correo no válido.' }));
+                }
+
+                const name = escapeHtml(fields.name);
+                const subject = escapeHtml(fields.subject);
+                const message = escapeHtml(fields.message);
 
                 const now = new Date().toLocaleString('es-CO', { timeZone: 'America/Bogota' });
 
@@ -51,7 +70,7 @@ const server = http.createServer(async (req, res) => {
                 await resend.emails.send({
                     from: 'ABACORE Contacto <contacto@abacore.co>',
                     to: [EMPRESA_EMAIL],
-                    subject: `[Nuevo Contacto] ${subject}`,
+                    subject: `[Nuevo Contacto] ${String(fields.subject).slice(0, 150)}`,
                     html: `
                         <div style="font-family: 'Inter', Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f9f9f9; border-radius: 8px; overflow: hidden;">
                             <div style="background: #1A1F2E; padding: 32px 40px;">
@@ -132,10 +151,27 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
-    // sirve los archivos estaticos
-    let filePath = path.join(__dirname, req.url === '/' ? 'index.html' : req.url);
+    // sirve los archivos estaticos (solo index.html y las carpetas publicas)
+    let pathname;
+    try {
+        pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
+    } catch {
+        res.writeHead(400);
+        return res.end('Bad request');
+    }
+    if (pathname === '/') pathname = '/index.html';
+
+    const filePath = path.join(__dirname, pathname);
+    const relative = path.relative(__dirname, filePath).split(path.sep);
+    const isPublic = relative.join('/') === 'index.html'
+        || (PUBLIC_DIRS.has(relative[0]) && relative.length > 1);
     const ext = path.extname(filePath);
-    const contentType = MIME_TYPES[ext] || 'text/plain';
+    const contentType = MIME_TYPES[ext];
+
+    if (!isPublic || !contentType || relative.some(part => part.startsWith('.'))) {
+        res.writeHead(404);
+        return res.end('Not found');
+    }
 
     fs.readFile(filePath, (err, data) => {
         if (err) {
